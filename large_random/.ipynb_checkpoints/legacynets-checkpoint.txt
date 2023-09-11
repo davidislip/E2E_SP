@@ -1,0 +1,327 @@
+
+class Net(nn.Module):
+    def __init__(self,iterations, penalties_init, 
+                 projection_layer, quadratic_layer, nr_assets,
+                 loss_fn):
+        super(Net, self).__init__()
+        self.epochs = 2
+        self.lr = 1e-2
+        
+        self.iterations = iterations
+        self.projection_layer = projection_layer
+        
+        self.quadratic_layer = quadratic_layer
+        self.nr_assets = nr_assets
+
+        self.penalties_init = nn.Parameter(torch.from_numpy(penalties_init))
+        self.perf_loss = loss_fn
+
+        self.Relu = nn.ReLU()
+
+    def forward(self, returns, r_min, matrix_sigma):
+        
+        
+        w_zeros = torch.zeros(self.nr_assets, dtype = torch.float64)
+        w = w_zeros
+        iter_lim = 1
+    
+        while iter_lim <= self.iterations:
+            x_ = self.quadratic_layer(torch.from_numpy(returns), #return vector
+                          torch.tensor(r_min), #return threshold
+                          torch.from_numpy(sqrtm(matrix_sigma)), #sqrt of covariance matrix
+                           self.Relu(self.penalties_init[iter_lim-1]), #penalty param
+                          w) #w
+            x = x_[0]
+            w = self.projection_layer(x)
+            
+            iter_lim = iter_lim + 1
+
+        return x
+  
+    
+    #-----------------------------------------------------------------------------------------------
+    # net_train: Train the e2e neural net
+    #-----------------------------------------------------------------------------------------------
+    def net_train(self, train_set, val_set=None, epochs=None, lr=None, store_solns = False):
+        """Neural net training module
+        
+        Inputs
+        train_set: SlidingWindow object containing feaatures x, realizations y and performance
+        realizations y_perf
+        val_set: SlidingWindow object containing feaatures x, realizations y and performance
+        realizations y_perf
+        epochs: Number of training epochs
+        lr: learning rate
+        Output
+        Trained model
+        (Optional) val_loss: Validation loss
+        """
+
+        # Assign number of epochs and learning rate
+        if epochs is None:
+            epochs = self.epochs
+        if lr is None:
+            lr = self.lr
+        
+        # Define the optimizer and its parameters
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+        # Number of elements in training set
+        n_train = len(train_set)
+        #a_hat for each iteration 
+        solns = []
+        # Train the neural network
+        for epoch in range(epochs):
+                
+            # TRAINING: forward + backward pass
+            train_loss = 0
+            optimizer.zero_grad() 
+            
+            for t, (inputs, target) in enumerate(train_set):
+                
+                returns, r_min, matrix_sigma = inputs 
+                # Forward pass: predict and optimize
+                x_padm = self(returns, r_min, matrix_sigma)
+                
+                if store_solns:
+                    solns.append(x_padm)
+                # Loss function
+    
+                loss = self.perf_loss(target, x_padm)
+                print(loss)
+                # Backward pass: backpropagation
+                loss.backward()
+                # Update parameters
+                optimizer.step()
+                # Accumulate loss of the fully trained model
+                train_loss += loss.item()
+        
+
+            # Ensure that penalty > 0 after taking a descent step
+            for name, param in self.named_parameters():
+                if name=='penalties_init':
+                    param.data.clamp_(0.0001)
+                
+        # Compute and return the validation loss of the model
+        if val_set is not None:
+
+            # Number of elements in validation set
+            n_val = len(val_set)
+
+            val_loss = 0
+            print("Validation")
+            with torch.no_grad():
+                for t, (inputs, target) in enumerate(val_set):
+                
+                    returns, r_min, matrix_sigma = inputs 
+                    # Forward pass: predict and optimize
+                    x_padm = self(returns, r_min, matrix_sigma)
+                
+                    # Loss function
+                 
+                    loss = self.perf_loss(target, x_padm)
+                    print(t)
+                    print(loss)
+                    # Accumulate loss
+                    val_loss += loss.item()
+
+            return train_loss, val_loss, solns
+
+
+  def forward(self, returns, r_min, matrix_sigma):
+        
+        
+       # w_zeros = torch.zeros(self.nr_assets, dtype = torch.float64)
+        x = torch.zeros([self.iterations, self.nr_assets], dtype = torch.float64)
+        w = torch.zeros([self.iterations+1, self.nr_assets], dtype = torch.float64)
+        penalties_init = torch.tensor(1e-3, dtype=torch.float64 )
+        iter_lim = 1
+        while iter_lim <= self.iterations:
+            x[iter_lim-1,:] = self.quadratic_layer(torch.from_numpy(returns), #return vector
+                          torch.tensor(r_min), #return threshold
+                          torch.from_numpy(sqrtm(matrix_sigma)), #sqrt of covariance matrix
+                           self.Relu(self.penalties_init[iter_lim-1]), #penalty param
+                          w[iter_lim-1, :])[0] #w
+           
+            w[iter_lim,:] = self.projection_layer(x[iter_lim-1,:])
+            
+            if iter_lim < self.iterations:
+                self.multipliers[iter_lim-1] = 1 + self.beta1*torch.sigmoid(
+                    self.beta2*torch.norm(x[iter_lim-1,:] - w[iter_lim,:], p=1) + self.beta3)
+                
+                self.penalties_init[iter_lim] = self.multipliers[iter_lim-1]*self.penalties_init[iter_lim-1]
+            
+            iter_lim = iter_lim + 1
+            
+        return x[-1,:]
+        
+        
+        
+           
+        w_zeros = torch.zeros(self.nr_assets, dtype = torch.float64)
+        w = w_zeros
+        iter_lim = 1
+        
+        for i in range(self.iterations-1):
+            self.penalties[i+1] = torch.prod(self.multipliers[:i+1])*self.penalty_init
+            
+        while iter_lim <= self.iterations:
+            x_ = self.quadratic_layer(torch.from_numpy(returns), #return vector
+                          torch.tensor(r_min), #return threshold
+                          torch.from_numpy(sqrtm(matrix_sigma)), #sqrt of covariance matrix
+                           self.Relu(torch.prod(self.multipliers[:iter_lim-1])*self.penalty_init), #penalty param
+                          w) #w
+            x = x_[0].clone()
+            w = self.projection_layer(x)
+            print(iter_lim)
+            if iter_lim < self.iterations:
+                self.multipliers[iter_lim-1] = 1 + self.beta1*torch.sigmoid(self.beta2*torch.norm(x.clone() - w.clone(), p=1) + self.beta3) 
+            iter_lim = iter_lim + 1
+            
+        return x
+        
+        
+# class Net(nn.Module):
+#     def __init__(self,iterations, penalties_init, #feed in a scalar
+#                  projection_layer, quadratic_layer, nr_assets,
+#                  loss_fn):
+#         super(Net, self).__init__()
+#         self.epochs = 2
+#         self.lr = 1e-2
+        
+#         self.iterations = iterations
+#         self.projection_layer = projection_layer
+        
+#         self.quadratic_layer = quadratic_layer
+#         self.nr_assets = nr_assets
+
+
+        
+#         self.beta1 = nn.Parameter(torch.tensor(5.0, dtype=torch.float64 ))
+#         self.beta2 = nn.Parameter(torch.tensor(200.0, dtype=torch.float64 ))
+#         self.beta3 = nn.Parameter(torch.tensor(-25.0, dtype=torch.float64 ))
+#         self.w_init = nn.Parameter(torch.zeros(nr_assets))
+#         self.perf_loss = loss_fn
+
+#         self.Relu = nn.ReLU()
+
+#     def forward(self, returns, r_min, matrix_sigma):
+        
+#         penalty_init = torch.tensor(1e-3, dtype=torch.float64, requires_grad = False)
+#         penalties = torch.zeros(self.iterations, dtype = torch.float64)
+#         multipliers = torch.zeros(self.iterations-1, dtype = torch.float64)
+        
+#               # w_zeros = torch.zeros(self.nr_assets, dtype = torch.float64)
+#         x = torch.zeros([self.iterations, self.nr_assets], dtype = torch.float64)
+#         w = torch.zeros([self.iterations+1, self.nr_assets], dtype = torch.float64)
+#         w[0,:] =  self.w_init
+#         penalties_init = torch.tensor(1e-3, dtype=torch.float64 )
+#         iter_lim = 1
+#         while iter_lim <= self.iterations:
+#             x[iter_lim-1,:] = self.quadratic_layer(torch.from_numpy(returns), #return vector
+#                           torch.tensor(r_min), #return threshold
+#                           torch.from_numpy(sqrtm(matrix_sigma)), #sqrt of covariance matrix
+#                            self.Relu(penalties[iter_lim-1]), #penalty param
+#                           w[iter_lim-1, :])[0] #w
+           
+#             w[iter_lim,:] = self.projection_layer(x[iter_lim-1,:])
+            
+#             if iter_lim < self.iterations:
+#                 multipliers[iter_lim-1] = 1 + self.beta1*torch.sigmoid(
+#                     self.beta2*torch.norm(x[iter_lim-1,:] - w[iter_lim,:], p=1) + self.beta3)
+                
+#                 penalties[iter_lim] = torch.prod(multipliers[:iter_lim-1].clone())*penalty_init
+            
+#             iter_lim = iter_lim + 1
+        
+#         self.penalties = penalties.detach()
+#         return x[-1,:]
+        
+    
+#     #-----------------------------------------------------------------------------------------------
+#     # net_train: Train the e2e neural net
+#     #-----------------------------------------------------------------------------------------------
+#     def net_train(self, train_set, val_set=None, epochs=None, lr=None, store_solns = False):
+#         """Neural net training module
+        
+#         Inputs
+#         train_set: SlidingWindow object containing feaatures x, realizations y and performance
+#         realizations y_perf
+#         val_set: SlidingWindow object containing feaatures x, realizations y and performance
+#         realizations y_perf
+#         epochs: Number of training epochs
+#         lr: learning rate
+#         Output
+#         Trained model
+#         (Optional) val_loss: Validation loss
+#         """
+
+#         # Assign number of epochs and learning rate
+#         if epochs is None:
+#             epochs = self.epochs
+#         if lr is None:
+#             lr = self.lr
+        
+#         # Define the optimizer and its parameters
+#         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+#         # Number of elements in training set
+#         n_train = len(train_set)
+#         #a_hat for each iteration 
+#         solns = []
+#         # Train the neural network
+#         for epoch in range(epochs):
+                
+#             # TRAINING: forward + backward pass
+#             train_loss = 0
+#             optimizer.zero_grad() 
+            
+#             for t, (inputs, target) in enumerate(train_set):
+                
+#                 returns, r_min, matrix_sigma = inputs 
+#                 # Forward pass: predict and optimize
+#                 x_padm = self(returns, r_min, matrix_sigma)
+                
+#                 if store_solns:
+#                     solns.append(x_padm)
+#                 # Loss function
+    
+#                 loss = self.perf_loss(target, x_padm)
+#                 print(loss)
+#                 # Backward pass: backpropagation
+#                 loss.backward()
+#                 # Update parameters
+#                 optimizer.step()
+#                 # Accumulate loss of the fully trained model
+#                 train_loss += loss.item()
+        
+
+#             # Ensure that penalty > 0 after taking a descent step
+#             for name, param in self.named_parameters():
+#                 if name=='penalties_init':
+#                     param.data.clamp_(0.0001)
+                
+#         val_loss = 0
+#         # Compute and return the validation loss of the model
+#         if val_set is not None:
+
+#             # Number of elements in validation set
+#             n_val = len(val_set)
+
+            
+#             print("Validation")
+#             with torch.no_grad():
+#                 for t, (inputs, target) in enumerate(val_set):
+                
+#                     returns, r_min, matrix_sigma = inputs 
+#                     # Forward pass: predict and optimize
+#                     x_padm = self(returns, r_min, matrix_sigma)
+                
+#                     # Loss function
+                 
+#                     loss = self.perf_loss(target, x_padm)
+#                     print(loss)
+#                     # Accumulate loss
+#                     val_loss += loss.item()
+
+#         return train_loss, val_loss, solns
