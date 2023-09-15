@@ -60,3 +60,35 @@ def generate_mu1(x, beta0 = 1,  beta1 = 1, beta2 = 0.01, beta3 = 0.01):
 
 def generate_mu2_scenarios(x, mu1, y, impact = 0.5):
     return (1 + x)*mu1 + impact*x*y
+
+def simulate_var_process(num_obs, num_series, mean_return, cov_matrix, ar_order, replications, ar_coeffs = None):
+    if len(mean_return) != num_series or cov_matrix.shape != (num_series, num_series):
+        raise ValueError("Invalid dimensions for mean_return or cov_matrix")
+
+    num_lags = ar_order
+    num_total_obs = num_obs + num_lags
+
+    # Generate random innovations from a multivariate normal distribution
+    innovations = np.random.multivariate_normal(mean=mean_return, cov=cov_matrix, size=num_total_obs)
+
+    # Initialize data matrix to store the generated observations
+    data = np.zeros((replications, num_total_obs, num_series))
+
+    # Fill in the initial observations with random innovations
+    for replication in range(replications):
+      data[replication, :num_lags, :] = innovations[:num_lags, :] #same data for every starting sequence
+
+    if ar_coeffs is None:
+      ar_coeffs = -0.8+0.2*np.random.random(num_series * num_lags).reshape((num_lags, num_series))
+
+    for replication in range(replications):
+      innovations = np.random.multivariate_normal(mean=mean_return, cov=cov_matrix, size=num_total_obs)
+      # Generate the VAR process
+      for t in range(num_lags, num_total_obs):
+          lagged_data = data[replication, t - num_lags:t, :]
+          data[replication, t, :] = (lagged_data*ar_coeffs).sum(axis = 0) + innovations[t, :]
+
+    # Discard the initial observations used for lagged values
+    #data = data[num_lags:, :]
+
+    return data, ar_coeffs
