@@ -159,7 +159,7 @@ def evaluate_soln_on_scenarios(y_val, mu1, mu2, cov_matrix, risk_aversion, trans
     for i in range(M):
         df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[i, :], mu2[i, :], cov_matrix,
                                                      risk_aversion=risk_aversion,
-                                                     transaction_penalty=txn_penalty,
+                                                     transaction_penalty=transaction_penalty,
                                                      y_1_val=y_val)
         performance.append(df.T)
     performance_df = pd.concat(performance, axis=0)
