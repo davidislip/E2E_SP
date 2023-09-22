@@ -150,8 +150,7 @@ class OLS:
         return self.mu_2_coeffs[0] * mu1 + self.mu_2_coeffs[1] * y + self.mu_2_coeffs[2]
 
 
-def evaluate_soln_on_scenarios(y_val, mu1, mu2, cov_matrix, risk_aversion=risk_aversion,
-                               transaction_penalty=txn_penalty):
+def evaluate_soln_on_scenarios(y_val, mu1, mu2, cov_matrix, risk_aversion, transaction_penalty):
     """
   given a solution evaluate its quality over scenarios
   """
