@@ -3,6 +3,7 @@ import cvxpy as cp
 import pandas as pd
 import time
 
+
 def single_forecast_mpc(mu_1, mu_2, covariance, risk_aversion, transaction_penalty, y_1_val=None):
     n = len(mu_1)
     w_0 = (1 / n) * np.ones(n)
@@ -16,7 +17,7 @@ def single_forecast_mpc(mu_1, mu_2, covariance, risk_aversion, transaction_penal
                        y_1 == w_1 - w_0, y_2 == w_2 - w_1]
     else:
         constraints = [cp.sum(w_1) == 1, cp.sum(w_2) == 1,
-                       w_1 >= -10**(-4), w_2 >= -10**(-4),
+                       w_1 >= -10 ** (-4), w_2 >= -10 ** (-4),
                        y_1 == w_1 - w_0, y_2 == w_2 - w_1,
                        y_1 == y_1_val]
 
@@ -27,7 +28,7 @@ def single_forecast_mpc(mu_1, mu_2, covariance, risk_aversion, transaction_penal
     transaction_cost = transaction_penalty * cp.norm1(y_1) + transaction_penalty * cp.norm1(y_2)
     adjusted_returns = ret_1 + ret_2 - (risk_1 + risk_2 + transaction_cost)
     prob = cp.Problem(cp.Maximize(adjusted_returns), constraints)
-    prob.solve(verbose=False, solver = 'ECOS')
+    prob.solve(verbose=False, solver='ECOS')
 
     df = pd.DataFrame((adjusted_returns.value, ret_1.value + ret_2.value, \
                        risk_1.value + risk_2.value, transaction_cost.value),
@@ -35,7 +36,7 @@ def single_forecast_mpc(mu_1, mu_2, covariance, risk_aversion, transaction_penal
     return df, y_1.value, y_2.value, w_1.value, w_2.value
 
 
-#extensive form of multi forecast problem
+# extensive form of multi forecast problem
 def multi_forecast_mpc(pi, mu_1, mu_forecasts, covariance, risk_aversion, transaction_penalty):
     # forecasts will be fed in as a list of vectors
     M = len(pi)  # number of scenarios
@@ -65,7 +66,7 @@ def multi_forecast_mpc(pi, mu_1, mu_forecasts, covariance, risk_aversion, transa
         expected_returns += pi[i] * (ret_i - (risk_i + transaction_cost_i))
 
     prob = cp.Problem(cp.Maximize(adjusted_returns + expected_returns), constraints)
-    prob.solve(verbose = False, solver = 'ECOS')
+    prob.solve(verbose=False, solver='ECOS')
 
     df = pd.DataFrame((adjusted_returns.value, expected_returns.value),
                       index=['Stage 1 Objective', 'Stage 2 Objective'])
@@ -73,42 +74,49 @@ def multi_forecast_mpc(pi, mu_1, mu_forecasts, covariance, risk_aversion, transa
 
 
 def evaluate_portfolio_models(mu1, mu2, cov_matrix, transaction_penalty, risk_aversion):
+    # evaluate multi forecast
+    two_stage_performance = []
+    deterministic_performance = []
+    M, n = mu2.shape
+    predicted_mu1 = mu1.mean(axis=0)
+    # generate mu2 using the best scenarios i.e. we do not know which one will occur
+    mu_forecasts = []
+    pi = []
+    for scenario in range(M):
+        predicted_mu2 = mu2[scenario,
+                        :]  # simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:]) #mu2[scenario,:] #simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:])
+        mu_forecasts.append(predicted_mu2)
+        pi.append(1 / M)
 
-  #evaluate multi forecast
-  two_stage_performance = []
-  deterministic_performance = []
-  M, n = mu2.shape
-  predicted_mu1 = mu1.mean(axis = 0)
-  #generate mu2 using the best scenarios i.e. we do not know which one will occur
-  mu_forecasts = []
-  pi = []
-  for scenario in range(M):
-      predicted_mu2 =  mu2[scenario,:] #simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:]) #mu2[scenario,:] #simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:])
-      mu_forecasts.append(predicted_mu2)
-      pi.append(1/M)
+    start = time.time()
+    df_mf, y_val, w_val = multi_forecast_mpc(pi, predicted_mu1, mu_forecasts, cov_matrix, risk_aversion,
+                                             transaction_penalty=transaction_penalty)
+    end = time.time()
 
-  start = time.time()
-  df_mf, y_val, w_val = multi_forecast_mpc(pi, predicted_mu1, mu_forecasts, cov_matrix, risk_aversion, transaction_penalty =transaction_penalty)
-  end = time.time()
+    df_sf, y_val_sf, y_2_sf, w_1_sf, w_2_sf = single_forecast_mpc(predicted_mu1, mu2.mean(axis=0), cov_matrix,
+                                                                  risk_aversion=risk_aversion,
+                                                                  transaction_penalty=transaction_penalty)
 
-  df_sf, y_val_sf, y_2_sf, w_1_sf, w_2_sf = single_forecast_mpc(predicted_mu1, mu2.mean(axis = 0), cov_matrix, risk_aversion = risk_aversion, transaction_penalty =transaction_penalty)
+    for scenario in range(M):
+        df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[scenario, :], mu2[scenario, :], cov_matrix,
+                                                     risk_aversion=risk_aversion,
+                                                     transaction_penalty=transaction_penalty, y_1_val=y_val)
+        two_stage_performance.append(df.T)
 
-  for scenario in range(M):
-      df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[scenario,:], mu2[scenario,:], cov_matrix, risk_aversion = risk_aversion, transaction_penalty =transaction_penalty, y_1_val=y_val)
-      two_stage_performance.append(df.T)
+        df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[scenario, :], mu2[scenario, :], cov_matrix,
+                                                     risk_aversion=risk_aversion,
+                                                     transaction_penalty=transaction_penalty, y_1_val=y_val_sf)
+        deterministic_performance.append(df.T)
+    two_stage_performance_df = pd.concat(two_stage_performance, axis=0)
+    deterministic_performance_df = pd.concat(deterministic_performance, axis=0)
 
-      df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[scenario,:], mu2[scenario,:], cov_matrix, risk_aversion = risk_aversion, transaction_penalty =transaction_penalty, y_1_val=y_val_sf)
-      deterministic_performance.append(df.T)
-  two_stage_performance_df = pd.concat(two_stage_performance, axis =0)
-  deterministic_performance_df = pd.concat(deterministic_performance, axis =0)
+    print("Transaction penalty ", transaction_penalty)
+    print("VSS ", (two_stage_performance_df.mean().iloc[0] - deterministic_performance_df.mean().iloc[0]))
 
-  print("Transaction penalty ", transaction_penalty)
-  print("VSS ", (two_stage_performance_df.mean().iloc[0] - deterministic_performance_df.mean().iloc[0]))
+    print("MFC Time (s) ", end - start)
 
-  print("MFC Time (s) ", end - start)
-
-  return {'deterministic portfolio': w_1_sf, 'deterministic results': deterministic_performance_df,
-          'MFC portfolio':w_val, 'MFC results':two_stage_performance_df}
+    return {'deterministic portfolio': w_1_sf, 'deterministic results': deterministic_performance_df,
+            'MFC portfolio': w_val, 'MFC results': two_stage_performance_df}
 
 
 class OLS:
@@ -140,3 +148,43 @@ class OLS:
 
     def predict_mu2(self, mu1, y):
         return self.mu_2_coeffs[0] * mu1 + self.mu_2_coeffs[1] * y + self.mu_2_coeffs[2]
+
+
+def evaluate_soln_on_scenarios(y_val, mu1, mu2, cov_matrix, risk_aversion=risk_aversion,
+                               transaction_penalty=txn_penalty):
+    """
+  given a solution evaluate its quality over scenarios
+  """
+    performance = []
+    M, num_series = mu1.shape
+    for i in range(M):
+        df, y_1, y_2, w_1, w_2 = single_forecast_mpc(mu1[i, :], mu2[i, :], cov_matrix,
+                                                     risk_aversion=risk_aversion,
+                                                     transaction_penalty=txn_penalty,
+                                                     y_1_val=y_val)
+        performance.append(df.T)
+    performance_df = pd.concat(performance, axis=0)
+    return performance_df.mean().iloc[0]  # compute the average performance
+
+
+def evaluate_mf(mu1, mu2, cov_matrix, transaction_penalty, risk_aversion):
+    """
+  This function solves the two stage s, risk_aversion, transaction penalty
+  and returns the optimal trade
+  this function is used to generate the dataset
+  """
+    # evaluate multi forecast
+    M, n = mu2.shape
+    predicted_mu1 = mu1.mean(axis=0)
+    mu_forecasts = []
+    pi = []
+    for scenario in range(M):
+        predicted_mu2 = mu2[scenario,
+                        :]  # simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:]) #mu2[scenario,:] #simple_estimator.predict_mu2(predicted_mu1, y_scenarios[scenario,:])
+        mu_forecasts.append(predicted_mu2)
+        pi.append(1 / M)
+    start = time.time()
+    df_mf, y_val, w_val = multi_forecast_mpc(pi, predicted_mu1, mu_forecasts, cov_matrix, risk_aversion,
+                                             transaction_penalty=transaction_penalty)
+    end = time.time()
+    return df_mf.iloc[0, 0], y_val  # objective value and trade
