@@ -4,6 +4,7 @@ from cvxpylayers.torch import CvxpyLayer
 import cvxpy as cp
 import torch.nn as nn
 
+
 def end_of_loop_mpc_layer(w_0, covariance, risk_aversion, transaction_penalty):
     """
     convex optimization layer for portfolio optimization to evaluate the
@@ -81,27 +82,112 @@ def multi_forecast_mpc_layer(w_0, M, covariance, risk_aversion, transaction_pena
     return CvxpyLayer(prob, [mu_1, mu_forecasts], [w, y])
 
 
-class mu1_layer(nn.Module): #simple model
+class mu1_layer(nn.Module):  # simple model
     """
     $\mu = 1 + \beta_1*\sigmoid(\beta_2 ||x - w||_1 +\beta_3)$
     """
 
-    def __init__(self, num_series ):
+    def __init__(self, num_series):
         super().__init__()
-        self.mu1 = nn.Parameter(torch.zeros(num_series,  dtype = torch.float64))
+        self.mu1 = nn.Parameter(torch.zeros(num_series, dtype=torch.float64))
 
     def forward(self):
         return self.mu1
 
-class mu2_layer(nn.Module): #simple model
+
+class mu2_layer(nn.Module):  # simple model
     """
     $\mu = 1 + \beta_1*\sigmoid(\beta_2 ||x - w||_1 +\beta_3)$
     """
 
     def __init__(self, num_series, NumScen):
         super().__init__()
-        self.mu2 = nn.Parameter(-0.05 + 0.1*torch.rand((NumScen, num_series),  dtype = torch.float64))
-        #nn.Parameter(torch.normal(torch.rand((NumScen, num_series), dtype = torch.float64), std = torch.tensor(1.0)))
+        self.mu2 = nn.Parameter(-0.05 + 0.1 * torch.rand((NumScen, num_series), dtype=torch.float64))
+        # nn.Parameter(torch.normal(torch.rand((NumScen, num_series), dtype = torch.float64), std = torch.tensor(1.0)))
 
     def forward(self):
         return self.mu2
+
+
+class RegressorModule(nn.Module):
+    def __init__(
+            self,
+            input_dim=2 * 50,
+            num_units=128,  # number of hidden units
+            nonlin=nn.ReLU,  # activation function
+            print_flag=False,
+            number_hidden=4  # 4, 3, 2
+    ):
+        super(RegressorModule, self).__init__()
+        self.num_units = num_units
+        self.input_dim = input_dim
+        self.nonlin = nonlin
+        self.print_flag = print_flag
+        self.number_hidden = number_hidden
+
+        if number_hidden >= 4:
+            self.encoder = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, input_dim)
+            )
+
+            self.predictor = nn.Sequential(
+                nn.Linear(2 * input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, 1)  # to predict the loss
+            )
+
+        elif number_hidden == 3:
+            self.encoder = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, input_dim)
+            )
+
+            self.predictor = nn.Sequential(
+                nn.Linear(2 * input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, 1)  # to predict the loss
+            )
+
+        elif number_hidden == 2:
+            self.encoder = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, input_dim)
+            )
+
+            self.predictor = nn.Sequential(
+                nn.Linear(2 * input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, 1)  # to predict the loss
+            )
+
+    def forward(self, X, **kwargs):
+        # operate on each scenario
+        # aggregate them
+        # operate on the aggregated scenario
+        lower_X = X[..., :-1, :]  # lower level scenarios
+        upper_X = X[..., -1, :]  # upper level scenario
+        if self.print_flag:
+            print("lower scenarios shape ", lower_X.shape)
+            print("upper scenarios shape ", upper_X.shape)
+
+        Phi1 = self.encoder(lower_X)  # encode the lower level
+        Agg = Phi1.mean(axis=-2)  # aggregate them
+        Agg_upperX = torch.concat([Agg, upper_X], dim=-1)
+        X = self.predictor(Agg_upperX)
+        return X
