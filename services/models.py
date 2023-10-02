@@ -215,12 +215,12 @@ def evaluate_portfolio_models(mu1, mu2, cov_matrix, transaction_penalty, risk_av
 
     start = time.time()
     # form multi forecast problem
-    mf_mpc_prob = define_multi_forecast_mpc(pi, cov_matrix, risk_aversion, txn_penalty)
+    mf_mpc_prob = define_multi_forecast_mpc(pi, cov_matrix, risk_aversion, transaction_penalty)
     df_mf, y_val_mf, w_val_mf = solve_multi_forecast_mpc(mf_mpc_prob, predicted_mu1, mu_forecasts)
     end = time.time()
 
     # form single forecast problem
-    sf_mpc_prob = define_single_forecast_mpc(cov_matrix, risk_aversion, txn_penalty, y_1_val_flag=True)
+    sf_mpc_prob = define_single_forecast_mpc(cov_matrix, risk_aversion, transaction_penalty, y_1_val_flag=True)
     df_sf, y_val_sf, y_2_sf, w_1_sf, w_2_sf = solve_single_forecast_mpc(y_val, predicted_mu1,
                                                                         mu2.mean(axis=0), sf_mpc_prob)
 
