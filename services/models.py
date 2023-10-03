@@ -206,30 +206,30 @@ def evaluate_portfolio_models(mu1, mu2, cov_matrix, transaction_penalty, risk_av
     M, n = mu2.shape
     predicted_mu1 = mu1.mean(axis=0)
     # generate mu2 using the best scenarios i.e. we do not know which one will occur
-    mu_forecasts = []
-    pi = []
-    for scenario in range(M):
-        predicted_mu2 = mu2[scenario, :]
-        mu_forecasts.append(predicted_mu2)
-        pi.append(1 / M)
+
+    pi = [1 / M for i in range(M)]
 
     start = time.time()
     # form multi forecast problem
     mf_mpc_prob = define_multi_forecast_mpc(pi, cov_matrix, risk_aversion, transaction_penalty)
-    df_mf, y_val_mf, w_val_mf = solve_multi_forecast_mpc(mf_mpc_prob, predicted_mu1, mu_forecasts)
+    mf_mpc_prob.ignore_dpp = True  # problem is too big and is only solved once
+    df_mf, y_val_mf, w_val_mf = solve_multi_forecast_mpc(mf_mpc_prob, predicted_mu1, mu2)
     end = time.time()
 
     # form single forecast problem
+    sf_mpc_prob = define_single_forecast_mpc(cov_matrix, risk_aversion, transaction_penalty, y_1_val_flag=False)
+
+    df_sf, y_val_sf, y_2_sf, w_1_sf, w_2_sf = solve_single_forecast_mpc(sf_mpc_prob, predicted_mu1,
+                                                                        mu2.mean(axis=0))
+
     sf_mpc_prob = define_single_forecast_mpc(cov_matrix, risk_aversion, transaction_penalty, y_1_val_flag=True)
-    df_sf, y_val_sf, y_2_sf, w_1_sf, w_2_sf = solve_single_forecast_mpc(y_val, predicted_mu1,
-                                                                        mu2.mean(axis=0), sf_mpc_prob)
 
     for scenario in range(M):
         # two stage solution
-        df, y_1, y_2, w_1, w_2 = solve_single_forecast_mpc(y_val_mf, mu1[scenario, :], mu2[scenario, :], sf_mpc_prob)
+        df, y_1, y_2, w_1, w_2 = solve_single_forecast_mpc(sf_mpc_prob, mu1[scenario, :], mu2[scenario, :], y_val_mf)
         two_stage_performance.append(df.T)
         # two stage solution
-        df, y_1, y_2, w_1, w_2 = solve_single_forecast_mpc(y_val_sf, mu1[scenario, :], mu2[scenario, :], sf_mpc_prob)
+        df, y_1, y_2, w_1, w_2 = solve_single_forecast_mpc(sf_mpc_prob, mu1[scenario, :], mu2[scenario, :], y_val_sf)
         deterministic_performance.append(df.T)
 
     two_stage_performance_df = pd.concat(two_stage_performance, axis=0)
