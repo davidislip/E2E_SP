@@ -137,7 +137,11 @@ def retrive_training_data(cache, experiment_folder, sampling_nums):
     contexts = np.concatenate(contexts, axis=0)
     inputs = np.concatenate(inputs, axis=0)
 
-    return inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts
+    # no need to duplicate the context for each surrogate scenario
+    # hence contexts[:, 0, :, ;]
+
+    return inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts[:, 0, :, :]
+
 
 
 def retrive_expectation_training_data(cache, experiment_folder, sampling_nums):
