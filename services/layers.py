@@ -110,6 +110,19 @@ class mu2_layer(nn.Module):  # simple model
 
 
 class RegressorModule(nn.Module):
+    """
+    Implements the neural architecture that maps surrogate scenarios
+    and an observed scenario to a value of the predicted loss
+
+    i.e. $\zeta_{1...K}$ and $\xi$ are inputs that are stacked
+    Each surrogate scenario is encoded using the encoder $\Phi_1$
+    i.e. $\Phi_1(\zeta^{(k)}$
+    then each encoded scenario is aggregated as a representative scenario
+    and fed into a network $\Phi_2$ used to predict $l(\zeta_{1...K}, \xi)$
+    where $l(\zeta_{1...K}, \xi)$ the loss of the surrogate scenario solution
+    $\boldsymbol{y}(\zeta_{1...K})$ evaluated on scenario $\xi
+    """
+
     def __init__(
             self,
             input_dim=2 * 50,
@@ -191,3 +204,104 @@ class RegressorModule(nn.Module):
         Agg_upperX = torch.concat([Agg, upper_X], dim=-1)
         X = self.predictor(Agg_upperX)
         return X
+
+
+class DCSRO_task_net(nn.Module):
+    def __init__(
+            self,
+            input_dim=2 * 50,
+            num_series=50,
+            num_surrogates=3,
+            num_units=3 * 128,  # number of hidden units
+            nonlin=nn.ReLU,
+            print_flag=False,
+            number_hidden=3  # 4, 3, 2
+
+    ):
+        super(DCSRO_task_net, self).__init__()
+        self.num_series = num_series
+        self.num_surrogates = num_surrogates
+        # self.mu1 = nn.Parameter(torch.rand((1, num_series), dtype = torch.float64))
+        # self.mu2 = nn.Parameter(torch.rand((num_surrogates, num_series), dtype = torch.float64))
+        self.num_units = num_units
+        self.input_dim = input_dim
+        self.nonlin = nonlin
+        self.print_flag = print_flag
+        self.number_hidden = number_hidden
+
+        if number_hidden >= 4:
+            self.mu1_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series)
+            )
+
+            self.mu2_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series * self.num_surrogates)  # to predict the loss
+            )
+
+        elif number_hidden == 3:
+            self.mu1_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series)
+            )
+
+            self.mu2_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series * self.num_surrogates)  # to predict the loss
+            )
+
+        elif number_hidden == 2:
+            self.mu1_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series)
+            )
+
+            self.mu2_predictor = nn.Sequential(
+                nn.Linear(input_dim, num_units),
+                nonlin(),
+                nn.Linear(num_units, self.num_series * self.num_surrogates)  # to predict the loss
+            )
+
+    def forward(self, X, **kwargs):
+        # operate on each scenario
+        # aggregate them
+        # operate on the aggregated scenario
+        Batches = X.size(dim=0)
+        flatten_context = X.flatten(start_dim=1)  # batch x k n_series where k is AR(k)
+
+        mu1 = self.mu1_predictor(flatten_context)
+        mu1 = mu1[:, None]
+        mu2 = self.mu2_predictor(flatten_context)
+
+        # repeat the first stage expected returns K_ times
+        repeated_mu1 = torch.repeat_interleave(mu1, repeats=self.num_surrogates, dim=1)
+
+        mu2_reshape = mu2.reshape(Batches, self.num_surrogates, self.num_series)
+
+        # concatenate the first and second period scenarios together
+        concatenated_mu = torch.cat((repeated_mu1, mu2_reshape), axis=-1)
+
+        # scratch
+        # concatenated_mu = concatenated_mu[None, :]
+        # concatenated_mu = torch.repeat_interleave(concatenated_mu, repeats = Batches, dim = 0)
+        # print(concatenated_mu.shape)
+        return concatenated_mu
+
