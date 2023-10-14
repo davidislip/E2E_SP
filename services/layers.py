@@ -119,24 +119,24 @@ class RegressorModule(nn.Module):
             print_flag=False,
             number_hidden=4  # 4, 3, 2
     ):
-        """
-        Implements the neural architecture that maps surrogate scenarios
-        and an observed scenario to a value of the predicted loss
+        
+        # Implements the neural architecture that maps surrogate scenarios
+        # and an observed scenario to a value of the predicted loss
+        #
+        # i.e. $\zeta_{1...K}$ and $\xi$ are inputs that are stacked
+        # Each surrogate scenario is encoded using the encoder $\Phi_1$
+        # i.e. $\Phi_1(\zeta^{(k)}$
+        # then each encoded scenario is aggregated as a representative scenario
+        # and fed into a network $\Phi_2$ used to predict $l(\zeta_{1...K}, \xi)$
+        # where $l(\zeta_{1...K}, \xi)$ the loss of the surrogate scenario solution
+        # $\boldsymbol{y}(\zeta_{1...K})$ evaluated on scenario $\xi
+        #
+        # :param input_dim:
+        # :param num_units:
+        # :param nonlin:
+        # :param print_flag:
+        # :param number_hidden:
 
-        i.e. $\zeta_{1...K}$ and $\xi$ are inputs that are stacked
-        Each surrogate scenario is encoded using the encoder $\Phi_1$
-        i.e. $\Phi_1(\zeta^{(k)}$
-        then each encoded scenario is aggregated as a representative scenario
-        and fed into a network $\Phi_2$ used to predict $l(\zeta_{1...K}, \xi)$
-        where $l(\zeta_{1...K}, \xi)$ the loss of the surrogate scenario solution
-        $\boldsymbol{y}(\zeta_{1...K})$ evaluated on scenario $\xi
-
-        :param input_dim:
-        :param num_units:
-        :param nonlin:
-        :param print_flag: 
-        :param number_hidden:
-        """
         super(RegressorModule, self).__init__()
         self.num_units = num_units
         self.input_dim = input_dim
