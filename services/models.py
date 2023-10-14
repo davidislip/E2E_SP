@@ -269,13 +269,16 @@ def evaluation_wrapper(mu1_data_lower, mu2_data_lower, mu1_data_upper,
     """A wrapper around solve_and_derivative for the batch function."""
 
     obj_val, y_i = evaluate_mf(mu1_data_lower, mu2_data_lower, lower_level_problem)
-    risk_adjusted_return = evaluate_soln_on_scenarios(y_i, mu1_data_upper, mu2_data_upper, upper_level_problem)
+    if mu1_data_upper is not None:
+        risk_adjusted_return = evaluate_soln_on_scenarios(y_i, mu1_data_upper, mu2_data_upper, upper_level_problem)
+    else:
+        risk_adjusted_return = None
     return risk_adjusted_return
 
 
 def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers,
                                mu2_data_uppers, lower_level_problem, upper_level_problem,
-                               n_jobs=-1, pool=None):
+                               n_jobs=-1, pool=None, eval=True):
     """
     Solves a batch of surrogate programs and returns a batched objective value
     Uses a ThreadPool to perform operations across the batch in parallel.
@@ -323,11 +326,15 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
         if pool is None:
             pool_was_none = True
             pool = Pool(processes=n_jobs)
-        args = [(mu1_data_lower, mu2_data_lower, mu1_data_upper, mu2_data_upper,
-                 lower_level_problem, upper_level_problem) for mu1_data_lower,
-                                                               mu2_data_lower, mu1_data_upper, mu2_data_upper in
-                zip(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers,
-                    mu2_data_uppers)]
+        if eval:
+            args = [(mu1_data_lower, mu2_data_lower, mu1_data_upper, mu2_data_upper,
+                     lower_level_problem, upper_level_problem) for mu1_data_lower,
+                    mu2_data_lower, mu1_data_upper,
+                    mu2_data_upper in zip(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers)]
+        else:  # no upper level to evaluate
+            args = [(mu1_data_lower, mu2_data_lower, None, None,
+                     lower_level_problem, upper_level_problem) for mu1_data_lower,
+                    mu2_data_lower in zip(mu1_data_lowers, mu2_data_lowers)]
 
         results = pool.starmap(evaluation_wrapper, args)
 

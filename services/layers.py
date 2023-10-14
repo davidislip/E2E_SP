@@ -119,7 +119,7 @@ class RegressorModule(nn.Module):
             print_flag=False,
             number_hidden=4  # 4, 3, 2
     ):
-        
+
         # Implements the neural architecture that maps surrogate scenarios
         # and an observed scenario to a value of the predicted loss
         #
