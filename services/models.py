@@ -272,7 +272,7 @@ def evaluation_wrapper(mu1_data_lower, mu2_data_lower, mu1_data_upper,
     if mu1_data_upper is not None:
         risk_adjusted_return = evaluate_soln_on_scenarios(y_i, mu1_data_upper, mu2_data_upper, upper_level_problem)
     else:
-        risk_adjusted_return = None
+        risk_adjusted_return = obj_val
     return risk_adjusted_return
 
 
@@ -344,3 +344,66 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
         risk_adjusted_returns = [r for r in results]
 
     return risk_adjusted_returns
+
+
+def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
+                            predicted_tree, scenarios, n_series,
+                            indices_to_iterate, name, cache, experiment_folder,
+                            times=None, N_sp=None):
+    if times is not None:
+        assert len(times) == 1
+    if N_sp is None:
+        N_sp = len(indices_to_iterate) - 1
+    else:
+        assert type(N_sp) == int
+
+    mu1_data_lowers = predicted_tree[..., :n_series]
+    mu2_data_lowers = predicted_tree[..., n_series:]
+    mu1_data_uppers = scenarios.squeeze()[..., :n_series]
+    mu2_data_uppers = scenarios.squeeze()[..., n_series:]
+
+    mu1_data_lowers_lst = [mu1_data_lowers[i] for i in range(N_sp)]
+    mu2_data_lowers_lst = [mu2_data_lowers[i] for i in range(N_sp)]
+    mu1_data_uppers_lst = [mu1_data_uppers[indices_to_iterate[i]:indices_to_iterate[i + 1]] for i in range(N_sp)]
+    mu2_data_uppers_lst = [mu2_data_uppers[indices_to_iterate[i]:indices_to_iterate[i + 1]] for i in range(N_sp)]
+
+    # evaluate the solutions on the upper level scenarios using our fancy batched method
+    mu1 = mu1_data_lowers_lst[0]
+    mu2 = mu2_data_lowers_lst[0]
+    M, n = mu1.shape  # lower level shape
+    pi = [1 / M for i in range(M)]  # equal weight
+
+    mf_mpc_prob = define_multi_forecast_mpc(pi, cov_matrix, risk_aversion, txn_penalty)
+    sf_mpc_prob = define_single_forecast_mpc(cov_matrix, risk_aversion, txn_penalty, y_1_val_flag=True)
+
+    n_jobs = mp.cpu_count()
+    pool = Pool(n_jobs)
+
+    # solve and evaluation.
+    # time solve and evaluation separately
+    start = time.time()
+    # eval the solutions on the observed distributions
+    r = batched_program_evaluation(mu1_data_lowers_lst, mu2_data_lowers_lst, mu1_data_uppers_lst,
+                                   mu2_data_uppers_lst, mf_mpc_prob, sf_mpc_prob,
+                                   n_jobs=-1, pool=pool)
+    end = time.time()
+    if times is not None:
+        times.append(end - start)
+
+    start = time.time()
+    # just getting the solutions
+    batched_program_evaluation(mu1_data_lowers_lst, mu2_data_lowers_lst, mu1_data_uppers_lst,
+                               mu2_data_uppers_lst, mf_mpc_prob, sf_mpc_prob,
+                               n_jobs=-1, pool=pool, eval=False)
+    end = time.time()
+    if times is not None:
+        times.append(end - start)
+    # evaluation method
+
+    df = pd.DataFrame(times, columns=['time'], index=[name + ' mapping training', 'eval', 'solve'])
+    df.to_csv(cache + experiment_folder + '/' + name + '_train_solve_eval_times.csv')
+
+    risk_adjusted_returns = pd.Series(r)
+    risk_adjusted_returns.to_csv(cache + experiment_folder + '/' + name + '_risk_adjusted_returns.csv')
+    pool.close()
+    # store returns
