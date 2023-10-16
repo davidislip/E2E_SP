@@ -329,12 +329,14 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
         if eval:
             args = [(mu1_data_lower, mu2_data_lower, mu1_data_upper, mu2_data_upper,
                      lower_level_problem, upper_level_problem) for mu1_data_lower,
-                    mu2_data_lower, mu1_data_upper,
-                    mu2_data_upper in zip(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers)]
+                                                                   mu2_data_lower, mu1_data_upper,
+                                                                   mu2_data_upper in
+                    zip(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers)]
         else:  # no upper level to evaluate
             args = [(mu1_data_lower, mu2_data_lower, None, None,
                      lower_level_problem, upper_level_problem) for mu1_data_lower,
-                    mu2_data_lower in zip(mu1_data_lowers, mu2_data_lowers)]
+                                                                   mu2_data_lower in
+                    zip(mu1_data_lowers, mu2_data_lowers)]
 
         results = pool.starmap(evaluation_wrapper, args)
 
@@ -346,15 +348,14 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
     return risk_adjusted_returns
 
 
-def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
-                            predicted_tree, scenarios, n_series,
-                            indices_to_iterate, name, cache, experiment_folder,
+def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty, contexts, unique_contexts,
+                            predicted_tree, scenarios, n_series, name, cache, experiment_folder,
                             train_time=None, N_sp=None):
     times = []
     if train_time is not None:
         times.append(train_time)
     if N_sp is None:
-        N_sp = len(indices_to_iterate) - 1
+        N_sp = len(unique_contexts)
     else:
         assert type(N_sp) == int
 
@@ -365,8 +366,14 @@ def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
 
     mu1_data_lowers_lst = [mu1_data_lowers[i] for i in range(N_sp)]
     mu2_data_lowers_lst = [mu2_data_lowers[i] for i in range(N_sp)]
-    mu1_data_uppers_lst = [mu1_data_uppers[indices_to_iterate[i]:indices_to_iterate[i + 1]] for i in range(N_sp)]
-    mu2_data_uppers_lst = [mu2_data_uppers[indices_to_iterate[i]:indices_to_iterate[i + 1]] for i in range(N_sp)]
+
+    mu1_data_uppers_lst = []
+    mu2_data_uppers_lst = []
+
+    for i in range(N_sp):
+        indices = np.isclose(contexts, unique_contexts[i]).all(axis=-1).all(axis=-1)
+        mu1_data_uppers_lst.append(mu1_data_uppers[indices])
+        mu2_data_uppers_lst.append(mu2_data_uppers[indices])
 
     # evaluate the solutions on the upper level scenarios using our fancy batched method
     mu1 = mu1_data_lowers_lst[0]
