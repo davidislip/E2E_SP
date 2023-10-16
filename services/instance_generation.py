@@ -143,37 +143,64 @@ def retrive_training_data(cache, experiment_folder, sampling_nums):
     return inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts[:, 0, :, :]
 
 
-
 def retrive_expectation_training_data(cache, experiment_folder, sampling_nums):
-  targets = []
-  mu1_data_lowers = []
-  mu2_data_lowers = []
-  inputs = []
-  mu1_data_uppers = []
-  mu2_data_uppers = []
-  contexts = []
-  for sampling_num in sampling_nums:
-    sampling_dir = cache + experiment_folder + str(sampling_num) + "/"
-    mu1_data_lower = np.load(sampling_dir+'surrogate_scenarios_mu1.npy')
-    mu2_data_lower = np.load(sampling_dir+'surrogate_scenarios_mu2.npy')
-    mu1_data_upper = np.load(sampling_dir+'evaluation_scenarios_mu1.npy')
-    mu2_data_upper = np.load(sampling_dir+'evaluation_scenarios_mu2.npy')
-    context = np.load(sampling_dir+'contexts.npy')
-    target = np.load(sampling_dir+'optimal_objectives.npy')
+    targets = []
+    mu1_data_lowers = []
+    mu2_data_lowers = []
+    inputs = []
+    mu1_data_uppers = []
+    mu2_data_uppers = []
+    contexts = []
+    for sampling_num in sampling_nums:
+        sampling_dir = cache + experiment_folder + str(sampling_num) + "/"
+        mu1_data_lower = np.load(sampling_dir + 'surrogate_scenarios_mu1.npy')
+        mu2_data_lower = np.load(sampling_dir + 'surrogate_scenarios_mu2.npy')
+        mu1_data_upper = np.load(sampling_dir + 'evaluation_scenarios_mu1.npy')
+        mu2_data_upper = np.load(sampling_dir + 'evaluation_scenarios_mu2.npy')
+        context = np.load(sampling_dir + 'contexts.npy')
+        target = np.load(sampling_dir + 'optimal_objectives.npy')
 
-    targets.append(target)
-    inputs.append(np.concatenate([mu1_data_lower, mu2_data_lower], axis = -1))
-    mu1_data_lowers.append(mu1_data_lower)
-    mu2_data_lowers.append(mu2_data_lower)
-    mu1_data_uppers.append(mu1_data_upper)
-    mu2_data_uppers.append(mu2_data_upper)
-    contexts.append(context)
-  targets = np.concatenate(targets, axis = 0)
-  mu1_data_lowers = np.concatenate(mu1_data_lowers, axis = 0)
-  mu2_data_lowers = np.concatenate(mu2_data_lowers, axis = 0)
-  mu1_data_uppers = np.concatenate(mu1_data_uppers, axis = 0)
-  mu2_data_uppers = np.concatenate(mu2_data_uppers, axis = 0)
-  contexts = np.concatenate(contexts, axis = 0)
-  inputs = np.concatenate(inputs, axis = 0)
+        targets.append(target)
+        inputs.append(np.concatenate([mu1_data_lower, mu2_data_lower], axis=-1))
+        mu1_data_lowers.append(mu1_data_lower)
+        mu2_data_lowers.append(mu2_data_lower)
+        mu1_data_uppers.append(mu1_data_upper)
+        mu2_data_uppers.append(mu2_data_upper)
+        contexts.append(context)
+    targets = np.concatenate(targets, axis=0)
+    mu1_data_lowers = np.concatenate(mu1_data_lowers, axis=0)
+    mu2_data_lowers = np.concatenate(mu2_data_lowers, axis=0)
+    mu1_data_uppers = np.concatenate(mu1_data_uppers, axis=0)
+    mu2_data_uppers = np.concatenate(mu2_data_uppers, axis=0)
+    contexts = np.concatenate(contexts, axis=0)
+    inputs = np.concatenate(inputs, axis=0)
 
-  return inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts
+    return inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts
+
+
+def split_by_context(split, inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers,
+                     contexts):
+    unique_contexts, idx, reverse_idx = np.unique(contexts, axis=0, return_index=True, return_inverse=True)
+
+    training = reverse_idx < len(unique_contexts) * split  # 20 % of contexts for out of sample analysis
+
+    oot = {'inputs': inputs[~training], 'targets': targets[~training], 'mu1_data_lowers': mu1_data_lowers[~training],
+           'mu2_data_lowers': mu2_data_lowers[~training], 'mu1_data_uppers': mu1_data_uppers[~training],
+           'mu2_data_uppers': mu2_data_uppers[~training], 'contexts': contexts[~training]}
+
+    insample = {'inputs': inputs[training], 'targets': targets[training], 'mu1_data_lowers': mu1_data_lowers[training],
+                'mu2_data_lowers': mu2_data_lowers[training], 'mu1_data_uppers': mu1_data_uppers[training],
+                'mu2_data_uppers': mu2_data_uppers[training], 'contexts': contexts[training]}
+
+    return insample, oot, training
+
+
+def retrieve_training_data_split(cache, experiment_folder, sampling_nums, split=0.8):
+    """
+    loads and splits the dataset by context
+    """
+    inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts = retrive_training_data(cache, experiment_folder, sampling_nums)
+
+    insample, oot, training = split_by_context(split, inputs, targets, mu1_data_lowers, mu2_data_lowers, mu1_data_uppers, mu2_data_uppers, contexts)
+
+    return insample, oot

@@ -349,9 +349,10 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
 def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
                             predicted_tree, scenarios, n_series,
                             indices_to_iterate, name, cache, experiment_folder,
-                            times=None, N_sp=None):
-    if times is not None:
-        assert len(times) == 1
+                            train_time=None, N_sp=None):
+    times = []
+    if train_time is not None:
+        times.append(train_time)
     if N_sp is None:
         N_sp = len(indices_to_iterate) - 1
     else:
@@ -387,8 +388,8 @@ def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
                                    mu2_data_uppers_lst, mf_mpc_prob, sf_mpc_prob,
                                    n_jobs=-1, pool=pool)
     end = time.time()
-    if times is not None:
-        times.append(end - start)
+
+    times.append(end - start)
 
     start = time.time()
     # just getting the solutions
@@ -396,14 +397,18 @@ def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty,
                                mu2_data_uppers_lst, mf_mpc_prob, sf_mpc_prob,
                                n_jobs=-1, pool=pool, eval=False)
     end = time.time()
-    if times is not None:
-        times.append(end - start)
-    # evaluation method
 
-    df = pd.DataFrame(times, columns=['time'], index=[name + ' mapping training', 'eval', 'solve'])
+    times.append(end - start)
+    # evaluation method
+    if train_time is None:
+        df = pd.DataFrame(times, columns=['time'], index=['eval', 'solve'])
+    else:
+        df = pd.DataFrame(times, columns=['time'], index=[name + ' mapping training', 'eval', 'solve'])
+
     df.to_csv(cache + experiment_folder + '/' + name + '_train_solve_eval_times.csv')
 
     risk_adjusted_returns = pd.Series(r)
     risk_adjusted_returns.to_csv(cache + experiment_folder + '/' + name + '_risk_adjusted_returns.csv')
     pool.close()
     # store returns
+    return risk_adjusted_returns, df
