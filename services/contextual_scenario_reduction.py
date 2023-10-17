@@ -21,3 +21,5 @@ class DCSRO_Net(NeuralNet):
                                 training=False)
         loss_value = loss.mean()
         return -loss_value
+
+
