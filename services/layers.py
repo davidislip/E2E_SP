@@ -311,3 +311,26 @@ class DCSRO_task_net(nn.Module):
         # print(concatenated_mu.shape)
         return concatenated_mu
 
+
+class loss_module(nn.Module):
+    def __init__(
+            self,
+            scaler_params = None,
+            loss_net = None
+    ):
+        # this module is used to wrap our pre trained network
+        super(loss_module, self).__init__()
+        self.loss_net = loss_net
+        self.module = loss_net.module_
+        self.mu_tch, self.var_tch = scaler_params
+
+
+    def forward(self, X, **kwargs): #x is scenario
+        # operate on each scenario
+        # aggregate them
+        # operate on the aggregated scenario
+        Batches = X.size(dim = 0)
+
+        X_scaled = torch.divide(X - self.mu_tch[None,None,:], torch.pow(self.var_tch[None,None,:], 0.5))
+
+        return self.module(X_scaled)
