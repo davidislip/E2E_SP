@@ -27,7 +27,7 @@ def test_and_save_config(net, ps, X_train_scaled, y, params, cache, experiment_f
 
     search = clf.fit(X_train_scaled, y)
 
-    isExist = os.path.exists(cache + experiment_folder + "/")
+    isExist = os.path.exists(cache + experiment_folder + name + "/")
 
     if not isExist:
         # Create a new directory because it does not exist

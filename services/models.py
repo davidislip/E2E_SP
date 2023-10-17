@@ -299,17 +299,20 @@ def batched_program_evaluation(mu1_data_lowers, mu2_data_lowers, mu1_data_uppers
     if n_jobs == -1:
         n_jobs = mp.cpu_count()
     batch_size = len(mu1_data_lowers)
-
     n_jobs = min(batch_size, n_jobs)  # which ever is smaller
 
     if n_jobs == 1:
         # serial
         risk_adjusted_returns = []
         for i in range(batch_size):
-            obj_val, y_i = evaluate_mf(mu1_data_lowers[i], mu2_data_lowers[i], lower_level_problem)
-            risk_adjusted_return = evaluate_soln_on_scenarios(y_i, mu1_data_uppers[i], mu2_data_uppers[i],
-                                                              upper_level_problem)
-            risk_adjusted_returns.append(risk_adjusted_return)
+            if eval:
+                obj_val, y_i = evaluate_mf(mu1_data_lowers[i], mu2_data_lowers[i], lower_level_problem)
+                risk_adjusted_return = evaluate_soln_on_scenarios(y_i, mu1_data_uppers[i], mu2_data_uppers[i],
+                                                                  upper_level_problem)
+                risk_adjusted_returns.append(risk_adjusted_return)
+            else:
+                obj_val, y_i = evaluate_mf(mu1_data_lowers[i], mu2_data_lowers[i], lower_level_problem)
+                risk_adjusted_returns.append(obj_val)
     else:
         # thread pool
         # raise NotImplementedError("Multithreading is not implemented yet")
@@ -411,6 +414,68 @@ def evaluate_predicted_tree(cov_matrix, risk_aversion, txn_penalty, contexts, un
         df = pd.DataFrame(times, columns=['time'], index=['eval', 'solve'])
     else:
         df = pd.DataFrame(times, columns=['time'], index=[name + ' mapping training', 'eval', 'solve'])
+
+    df.to_csv(cache + experiment_folder + '/' + name + '_train_solve_eval_times.csv')
+
+    risk_adjusted_returns = pd.Series(r)
+    risk_adjusted_returns.to_csv(cache + experiment_folder + '/' + name + '_risk_adjusted_returns.csv')
+    pool.close()
+    # store returns
+    return risk_adjusted_returns, df
+
+
+def evaluate_2SP(cov_matrix, risk_aversion, txn_penalty, contexts, unique_contexts, scenarios, n_series, name, cache,
+                 experiment_folder, N_sp=None):
+    times = []
+
+    if N_sp is None:
+        N_sp = len(unique_contexts)
+    else:
+        assert type(N_sp) == int
+
+    # the true scenrios (we are optimizing over these to find the best possible solution)
+    mu1_data_lowers = scenarios.squeeze()[..., :n_series]
+    mu2_data_lowers = scenarios.squeeze()[..., n_series:]
+
+    mu1_data_lowers_lst = []
+    mu2_data_lowers_lst = []
+
+    # for each unique context get the associated scenarios
+    for i in range(N_sp):
+        indices = np.isclose(contexts, unique_contexts[i]).all(axis=-1).all(axis=-1)
+        mu1_data_lowers_lst.append(mu1_data_lowers[indices])
+        mu2_data_lowers_lst.append(mu2_data_lowers[indices])
+
+    mu1_data_uppers_lst = []
+    mu2_data_uppers_lst = []
+
+    # evaluate the solutions on the upper level scenarios using our fancy batched method
+    mu1 = mu1_data_lowers_lst[0]
+    mu2 = mu2_data_lowers_lst[0]
+
+    M, n = mu1.shape  # lower level shape
+    pi = [1 / M for i in range(M)]  # equal weight
+
+    mf_mpc_prob = define_multi_forecast_mpc(pi, cov_matrix, risk_aversion, txn_penalty)
+    sf_mpc_prob = None
+
+    n_jobs = mp.cpu_count()
+    pool = Pool(n_jobs)
+
+    # solve and evaluation.
+    # time solve and evaluation separately
+    start = time.time()
+    # eval the solutions on the observed distributions
+    r = batched_program_evaluation(mu1_data_lowers_lst, mu2_data_lowers_lst, mu1_data_uppers_lst,
+                                   mu2_data_uppers_lst, mf_mpc_prob, sf_mpc_prob,
+                                   n_jobs=-1, pool=pool, eval=False)
+    end = time.time()
+
+    times.append(end - start)
+
+    # evaluation method
+
+    df = pd.DataFrame(times, columns=['time'], index=['2SP solve'])
 
     df.to_csv(cache + experiment_folder + '/' + name + '_train_solve_eval_times.csv')
 
